@@ -1,1 +1,73 @@
+name: Deploy Web App Stack
 
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+env:
+  AWS_REGION: us-east-1 # Change to your preferred AWS region
+  ECR_WEB_SERVER_REPO: simple-web-server
+  ECR_APP_SERVER_REPO: simple-app-server
+  EKS_CLUSTER_NAME: my-simple-eks-cluster
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # Required for OIDC authentication with AWS
+      contents: read
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-actions-eks-role 
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Build and push web server image
+      working-directory: ./app/web-server
+      run: |
+        docker build -t ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_WEB_SERVER_REPO }}:${{ github.sha }} .
+        docker push ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_WEB_SERVER_REPO }}:${{ github.sha }}
+
+    - name: Build and push app server image
+      working-directory: ./app/application-server
+      run: |
+        docker build -t ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_APP_SERVER_REPO }}:${{ github.sha }} .
+        docker push ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_APP_SERVER_REPO }}:${{ github.sha }}
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+
+    - name: Terraform Init
+      working-directory: ./terraform
+      run: terraform init
+
+    - name: Terraform Apply
+      working-directory: ./terraform
+      run: terraform apply -auto-approve
+
+    - name: Update Kubeconfig
+      run: |
+        aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }}
+
+    - name: Deploy to Kubernetes
+      run: |
+        # Replace image tags in Kubernetes manifests with the new SHA
+        # This is a simple sed example, for production consider kustomize or Helm
+        sed -i "s|WEB_SERVER_IMAGE_PLACEHOLDER|${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_WEB_SERVER_REPO }}:${{ github.sha }}|g" kubernetes/deployments/web-server-deployment.yaml
+        sed -i "s|APP_SERVER_IMAGE_PLACEHOLDER|${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_APP_SERVER_REPO }}:${{ github.sha }}|g" kubernetes/deployments/app-server-deployment.yaml
+
+        kubectl apply -f kubernetes/deployments/
+        kubectl apply -f kubernetes/services/
