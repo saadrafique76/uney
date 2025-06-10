@@ -1,1 +1,55 @@
-
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app-server-deployment
+  labels:
+    app: app-server
+spec:
+  replicas: 2 # Scalable: Change this number
+  selector:
+    matchLabels:
+      app: app-server
+  template:
+    metadata:
+      labels:
+        app: app-server
+    spec:
+      containers:
+      - name: app-server
+        image: APP_SERVER_IMAGE_PLACEHOLDER # This will be replaced by CI/CD
+        ports:
+        - containerPort: 3000
+        env: # Environment variables for connecting to the database
+          - name: DB_HOST
+            value: "your-rds-endpoint.aws-region.rds.amazonaws.com" # Replace with your RDS endpoint
+          - name: DB_USER
+            valueFrom: # Good practice: use secrets for sensitive info
+              secretKeyRef:
+                name: rds-credentials
+                key: username
+          - name: DB_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: rds-credentials
+                key: password
+          - name: DB_NAME
+            value: "yourdbname" # Replace with your database name
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "200m"
+          limits:
+            memory: "256Mi"
+            cpu: "400m"
+        livenessProbe:
+          httpGet:
+            path: /api/hello
+            port: 3000
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /api/hello
+            port: 3000
+          initialDelaySeconds: 10
+          periodSeconds: 10
