@@ -1,0 +1,15 @@
+{
+  "name": "simple-app-server",
+  "version": "1.0.0",
+  "description": "A simple Node.js application server API",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}
